@@ -10,7 +10,7 @@ from linebot.v3.messaging import (
     ReplyMessageRequest, TextMessage, FlexMessage, FlexContainer
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
-import google.generativeai as genai
+from google import genai
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -26,8 +26,7 @@ GOOGLE_CREDS  = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
 # ── LINE / Gemini 初始化 ──────────────────────────────
 configuration = Configuration(access_token=LINE_TOKEN)
 handler = WebhookHandler(LINE_SECRET)
-genai.configure(api_key=GEMINI_KEY)
-gemini = genai.GenerativeModel("gemini-2.0-flash-lite")
+gemini = genai.Client(api_key=GEMINI_KEY)
 
 # ── Google Sheets 連線 ────────────────────────────────
 def get_sheet():
@@ -80,8 +79,8 @@ PROMPT_TEMPLATE = """你是一個業務CRM助理，請根據以下工作性質�
 """
 
 def ai_classify(text: str) -> dict:
-    response = gemini.generate_content(PROMPT_TEMPLATE + text)
-    raw = response.text.strip()
+    response = gemini.models.generate_content(model="gemini-2.0-flash-lite", contents=PROMPT_TEMPLATE + text)
+raw = response.text.strip()
     clean = re.sub(r"```json|```", "", raw).strip()
     return json.loads(clean)
 
