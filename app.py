@@ -1,6 +1,8 @@
 import os
 import json
 import re
+import time
+import threading
 from datetime import datetime
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
@@ -75,13 +77,21 @@ PROMPT_TEMPLATE = """你是一個業務CRM助理，請根據以下工作性質�
 """
 
 def ai_classify(text):
-    response = gemini.models.generate_content(
-        model="gemini-2.0-flash-lite",
-        contents=PROMPT_TEMPLATE + text
-    )
-    raw = response.text.strip()
-    clean = re.sub(r"```json|```", "", raw).strip()
-    return json.loads(clean)
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = gemini.models.generate_content(
+                model="gemini-2.0-flash-lite",
+                contents=PROMPT_TEMPLATE + text
+            )
+            raw = response.text.strip()
+            clean = re.sub(r"```json|```", "", raw).strip()
+            return json.loads(clean)
+        except Exception as e:
+            if "429" in str(e) and attempt < max_retries - 1:
+                time.sleep(2)
+                continue
+            raise e
 
 def append_to_sheet(contact, category, summary, content, status, confidence):
     ws = get_sheet()
@@ -149,12 +159,7 @@ def callback():
         abort(400)
     return "OK"
 
-@handler.add(MessageEvent, message=TextMessageContent)
-def handle_message(event):
-    text = event.message.text.strip()
-    if text in ["選單", "help", "Help", "？", "?"]:
-        reply_help(event)
-        return
+def process_message_async(event, text):
     try:
         result = ai_classify(text)
     except Exception as e:
@@ -182,6 +187,15 @@ def handle_message(event):
                 contents=FlexContainer.from_dict(flex_content)
             )]
         ))
+
+@handler.add(MessageEvent, message=TextMessageContent)
+def handle_message(event):
+    text = event.message.text.strip()
+    if text in ["選單", "help", "Help", "？", "?"]:
+        reply_help(event)
+        return
+    thread = threading.Thread(target=process_message_async, args=(event, text))
+    thread.start()
 
 def reply_text(event, msg):
     with ApiClient(configuration) as api_client:
