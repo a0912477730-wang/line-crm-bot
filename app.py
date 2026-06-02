@@ -16,19 +16,16 @@ from google.oauth2.service_account import Credentials
 
 app = Flask(__name__)
 
-# ── 環境變數 ──────────────────────────────────────────
-LINE_TOKEN    = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
-LINE_SECRET   = os.environ["LINE_CHANNEL_SECRET"]
-GEMINI_KEY    = os.environ["GEMINI_API_KEY"]
-SHEET_ID      = os.environ["GOOGLE_SHEET_ID"]
-GOOGLE_CREDS  = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
+LINE_TOKEN   = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
+LINE_SECRET  = os.environ["LINE_CHANNEL_SECRET"]
+GEMINI_KEY   = os.environ["GEMINI_API_KEY"]
+SHEET_ID     = os.environ["GOOGLE_SHEET_ID"]
+GOOGLE_CREDS = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
 
-# ── LINE / Gemini 初始化 ──────────────────────────────
 configuration = Configuration(access_token=LINE_TOKEN)
 handler = WebhookHandler(LINE_SECRET)
 gemini = genai.Client(api_key=GEMINI_KEY)
 
-# ── Google Sheets 連線 ────────────────────────────────
 def get_sheet():
     creds_dict = json.loads(GOOGLE_CREDS)
     creds = Credentials.from_service_account_info(
@@ -46,7 +43,6 @@ def get_sheet():
         ws.freeze(rows=1)
     return ws
 
-# ── AI 工作性質判別（Gemini）────────────────────────────
 PROMPT_TEMPLATE = """你是一個業務CRM助理，請根據以下工作性質分類，判別對話內容。
 
 【工作性質分類】
@@ -78,24 +74,24 @@ PROMPT_TEMPLATE = """你是一個業務CRM助理，請根據以下工作性質�
 對話內容：
 """
 
-def ai_classify(text: str) -> dict:
-    response = gemini.models.generate_content(model="gemini-2.0-flash-lite", contents=PROMPT_TEMPLATE + text)
-raw = response.text.strip()
+def ai_classify(text):
+    response = gemini.models.generate_content(
+        model="gemini-2.0-flash-lite",
+        contents=PROMPT_TEMPLATE + text
+    )
+    raw = response.text.strip()
     clean = re.sub(r"```json|```", "", raw).strip()
     return json.loads(clean)
 
-# ── 寫入 Google Sheets ────────────────────────────────
 def append_to_sheet(contact, category, summary, content, status, confidence):
     ws = get_sheet()
     now = datetime.now().strftime("%Y/%m/%d %H:%M")
     ws.append_row([now, contact, category, summary, content, status, confidence])
 
-# ── Flex Message 回覆卡片 ─────────────────────────────
-def build_flex(result: dict, original: str) -> dict:
+def build_flex(result, original):
     confidence_color = {"高": "#0F6E56", "中": "#854F0B", "低": "#A32D2D"}.get(result.get("confidence", "中"), "#888780")
     status_color = {"待跟進": "#854F0B", "跟進中": "#3C3489", "已成交": "#0F6E56", "已結案": "#5F5E5A"}.get(result.get("status", "待跟進"), "#854F0B")
     preview = original[:60] + ("…" if len(original) > 60 else "")
-
     return {
         "type": "bubble",
         "size": "kilo",
@@ -143,7 +139,6 @@ def build_flex(result: dict, original: str) -> dict:
         }
     }
 
-# ── Webhook 入口 ──────────────────────────────────────
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers["X-Line-Signature"]
@@ -157,19 +152,15 @@ def callback():
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     text = event.message.text.strip()
-
     if text in ["選單", "help", "Help", "？", "?"]:
         reply_help(event)
         return
-
     try:
         result = ai_classify(text)
     except Exception as e:
         reply_text(event, f"⚠️ AI 判別失敗：{str(e)[:80]}")
         return
-
     contact = result.get("contact", "") or "未知"
-
     try:
         append_to_sheet(
             contact=contact,
@@ -182,7 +173,6 @@ def handle_message(event):
     except Exception as e:
         reply_text(event, f"⚠️ 寫入 Sheets 失敗：{str(e)[:80]}")
         return
-
     flex_content = build_flex(result, text)
     with ApiClient(configuration) as api_client:
         MessagingApi(api_client).reply_message(ReplyMessageRequest(
@@ -208,8 +198,7 @@ def reply_help(event):
         "【方式 B】快速輸入\n"
         "直接輸入客戶名稱 + 內容\n"
         "例：王大明 今天去台北展間確認美綻報價\n\n"
-        "所有紀錄自動存入 Google Sheets 本月分頁\n"
-        "月底下載 Excel 即可上傳"
+        "所有紀錄自動存入 Google Sheets 本月分頁"
     )
 
 if __name__ == "__main__":
