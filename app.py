@@ -27,7 +27,7 @@ GOOGLE_CREDS  = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
 configuration = Configuration(access_token=LINE_TOKEN)
 handler = WebhookHandler(LINE_SECRET)
 genai.configure(api_key=GEMINI_KEY)
-gemini = genai.GenerativeModel("gemini-2.0-flash")
+gemini = genai.GenerativeModel("gemini-2.0-flash-lite")
 
 # ── Google Sheets 連線 ────────────────────────────────
 def get_sheet():
